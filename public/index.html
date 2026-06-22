@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Script Video Maker</title>
+</head>
+<body style="background:#111;color:white;font-family:Arial;padding:30px">
+  <h1>Script Video Maker</h1>
+
+  <textarea id="script" style="width:95%;height:280px;font-size:18px" placeholder="Hindi script yaha paste karo"></textarea>
+  <br><br>
+
+  <button onclick="generateVideo()" style="font-size:20px;padding:12px 25px">Generate MP4</button>
+
+  <p id="status"></p>
+
+  <video id="video" controls style="display:none;width:360px;margin-top:20px"></video>
+
+  <script src="app.js"></script>
+</body>
+</html>
