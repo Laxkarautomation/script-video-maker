@@ -1,0 +1,251 @@
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const { execFile } = require("child_process");
+
+const app = express();
+app.use(express.json({ limit: "20mb" }));
+app.use(express.static("public"));
+
+const OUT = path.join(__dirname, "output");
+fs.mkdirSync(OUT, { recursive: true });
+app.use("/output", express.static(OUT));
+
+function cleanupOutputs(maxAgeMs = 60 * 60 * 1000) {
+  const now = Date.now();
+  if (!fs.existsSync(OUT)) return;
+
+  for (const name of fs.readdirSync(OUT)) {
+    const full = path.join(OUT, name);
+    if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) continue;
+
+    const created = Number(name);
+    const age = Number.isFinite(created) ? now - created : maxAgeMs + 1;
+
+    if (age > maxAgeMs) {
+      fs.rmSync(full, { recursive: true, force: true });
+      console.log("Deleted old output:", name);
+    }
+  }
+}
+
+
+function run(cmd, args) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout);
+    });
+  });
+}
+
+function download(url, dest, attempt = 1) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    const req = https.get(url, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        file.close();
+        return download(res.headers.location, dest, attempt).then(resolve).catch(reject);
+      }
+
+      if (res.statusCode !== 200) {
+        file.close();
+        if (attempt < 3) return download(url, dest, attempt + 1).then(resolve).catch(reject);
+        return reject(new Error("Image download failed: " + res.statusCode));
+      }
+
+      res.pipe(file);
+      file.on("finish", () => file.close(resolve));
+    });
+
+    req.setTimeout(120000, () => {
+      req.destroy();
+      file.close();
+      if (attempt < 3) return download(url, dest, attempt + 1).then(resolve).catch(reject);
+      reject(new Error("Image download timeout"));
+    });
+
+    req.on("error", err => {
+      file.close();
+      if (attempt < 3) return download(url, dest, attempt + 1).then(resolve).catch(reject);
+      reject(err);
+    });
+  });
+}
+
+function cleanScript(script) {
+  return script
+    .replace(/\r/g, "\n")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .split("\n")
+    .map(x => x.trim())
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join("\n");
+}
+
+function detectCategory(script) {
+  const s = script.toLowerCase();
+  if (/(murder|police|case|crime|laash|hatya|khoon|inspector)/i.test(s)) return "crime";
+  if (/(bhoot|haveli|aatma|dar|horror|shraap|ghost)/i.test(s)) return "horror";
+  if (/(scam|fraud|paise|bank|loan|dhokha)/i.test(s)) return "scam";
+  if (/(raja|yudh|history|purana|samrajya)/i.test(s)) return "history";
+  if (/(psychology|mind|insaan|soch|aadat)/i.test(s)) return "psychology";
+  return "mystery";
+}
+
+function splitScenes(script) {
+  return script
+    .split(/[।.!?\n]+/)
+    .map(x => x.trim())
+    .filter(Boolean)
+    .filter(x => x.length > 8)
+    .slice(0, 12);
+}
+
+function safeFileText(text) {
+  return text.replace(/\n/g, " ").trim().slice(0, 120);
+}
+
+function visualPrompt(scene, category, index) {
+  const shots = ["wide shot", "closeup", "medium shot", "over the shoulder shot", "low angle shot", "dramatic object closeup"];
+  const shot = shots[index % shots.length];
+
+  return encodeURIComponent(
+    `${category} story scene, cinematic realistic vertical 9:16, ${shot}, Indian environment, dramatic lighting, suspense mood, detailed background, emotional storytelling, no text, no watermark, no logo, no distorted face, no extra fingers. Scene: ${scene}`
+  );
+}
+
+async function makeFallbackImage(img, scene) {
+  await run("ffmpeg", [
+    "-y",
+    "-f", "lavfi",
+    "-i", "color=c=black:s=1080x1920:d=1",
+    "-vf", `drawtext=text='${scene.replace(/'/g, "").slice(0, 80)}':fontcolor=white:fontsize=48:x=70:y=850:box=1:boxcolor=black@0.6:boxborderw=25`,
+    "-frames:v", "1",
+    img
+  ]);
+}
+
+app.post("/api/generate", async (req, res) => {
+  try {
+    cleanupOutputs();
+    const rawScript = String(req.body.script || "").trim();
+    if (!rawScript) return res.json({ success:false, error:"Script missing" });
+
+    const script = cleanScript(rawScript);
+    const category = detectCategory(script);
+    const scenes = splitScenes(script);
+
+    if (!scenes.length) return res.json({ success:false, error:"No scenes found" });
+
+    const id = Date.now().toString();
+    const dir = path.join(OUT, id);
+    fs.mkdirSync(dir, { recursive:true });
+
+    const audio = path.join(dir, "audio.mp3");
+    const list = path.join(dir, "clips.txt");
+    const video = path.join(dir, "video.mp4");
+    const summaryFile = path.join(dir, "summary.json");
+
+    fs.writeFileSync(path.join(dir, "script.txt"), script, "utf8");
+
+    console.log("Category:", category);
+    console.log("Scenes:", scenes.length);
+
+    console.log("Generating Hindi audio");
+    const ttsText = script.replace(/\n/g, ". ");
+    await run("python3", ["-m", "edge_tts", "--voice", "hi-IN-MadhurNeural", "--text", ttsText, "--write-media", audio]);
+    console.log("Audio done");
+
+    const sceneDuration = Math.max(4, Math.min(7, Math.ceil(52 / scenes.length)));
+    let clipList = "";
+
+    for (let i = 0; i < scenes.length; i++) {
+      const img = path.join(dir, `img_${i}.jpg`);
+      const clip = path.join(dir, `clip_${i}.mp4`);
+      const sub = path.join(dir, `sub_${i}.txt`);
+      const url = `https://image.pollinations.ai/prompt/${visualPrompt(scenes[i], category, i)}?width=1080&height=1920&seed=${id}${i}&nologo=true`;
+
+      fs.writeFileSync(sub, safeFileText(scenes[i]), "utf8");
+
+      console.log("Downloading image", i + 1, "/", scenes.length);
+      try {
+        await download(url, img);
+      } catch (e) {
+        console.log("Image failed, using fallback", i + 1);
+        await makeFallbackImage(img, scenes[i]);
+      }
+      console.log("Image ready", i + 1);
+
+      console.log("Making clip", i + 1);
+      await run("ffmpeg", [
+        "-y",
+        "-loop", "1",
+        "-i", img,
+        "-t", String(sceneDuration),
+        "-vf",
+        `scale=1080:1920,zoompan=z='min(zoom+0.0012,1.12)':d=${sceneDuration * 25}:s=1080x1920,drawtext=textfile=${sub}:fontcolor=white:fontsize=48:x=70:y=1500:box=1:boxcolor=black@0.68:boxborderw=24,format=yuv420p`,
+        "-r", "25",
+        "-c:v", "libx264",
+        "-b:v", "3500k",
+        "-pix_fmt", "yuv420p",
+        clip
+      ]);
+
+      clipList += `file '${clip}'\n`;
+    }
+
+    fs.writeFileSync(list, clipList, "utf8");
+
+    const silent = path.join(dir, "silent.mp4");
+
+    console.log("Concatenating clips");
+    await run("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", silent]);
+
+    console.log("Adding audio");
+    await run("ffmpeg", [
+      "-y",
+      "-stream_loop", "-1",
+      "-i", silent,
+      "-i", audio,
+      "-shortest",
+      "-c:v", "libx264",
+      "-b:v", "3500k",
+      "-c:a", "aac",
+      "-b:a", "160k",
+      "-pix_fmt", "yuv420p",
+      video
+    ]);
+
+    const summary = {
+      success: true,
+      jobId: id,
+      category,
+      scenes: scenes.length,
+      sceneDuration,
+      videoUrl: "/output/" + id + "/video.mp4",
+      downloadUrl: "/output/" + id + "/video.mp4",
+      expiresIn: "1 hour"
+    };
+
+    fs.writeFileSync(summaryFile, JSON.stringify(summary, null, 2), "utf8");
+
+    console.log("Video done:", summary.videoUrl);
+    res.json(summary);
+
+  } catch(e) {
+    console.error(e.message);
+    res.json({ success:false, error:e.message });
+  }
+});
+
+
+app.post("/generate", (req, res) => {
+  req.url = "/api/generate";
+  app._router.handle(req, res);
+});
+
+app.listen(3000, () => console.log("Server running on port 3000"));

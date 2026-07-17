@@ -1,27 +1,389 @@
 <!DOCTYPE html>
-<html>
+<html lang="hi">
 <head>
-  <title>Script Video Maker</title>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Script Video Maker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0a;
+      --card:      #141414;
+      --border:    #222;
+      --gold:      #f5c518;
+      --gold-dim:  #c9a012;
+      --text:      #f0f0f0;
+      --muted:     #666;
+      --success:   #22c55e;
+      --error:     #ef4444;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo-strip {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-bottom: 18px;
+    }
+    .strip-cell {
+      width: 18px;
+      height: 28px;
+      background: var(--gold);
+      border-radius: 2px;
+      opacity: 0.15;
+      animation: pulse-strip 2s ease-in-out infinite;
+    }
+    .strip-cell:nth-child(1)  { animation-delay: 0s; }
+    .strip-cell:nth-child(2)  { animation-delay: 0.15s; }
+    .strip-cell:nth-child(3)  { animation-delay: 0.3s; }
+    .strip-cell:nth-child(4)  { animation-delay: 0.45s; }
+    .strip-cell:nth-child(5)  { animation-delay: 0.6s; }
+    .strip-cell:nth-child(6)  { animation-delay: 0.75s; }
+    .strip-cell:nth-child(7)  { animation-delay: 0.9s; }
+    .strip-cell:nth-child(8)  { animation-delay: 1.05s; }
+
+    @keyframes pulse-strip {
+      0%, 100% { opacity: 0.12; transform: scaleY(1); }
+      50%       { opacity: 0.9;  transform: scaleY(1.25); }
+    }
+
+    h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(26px, 5vw, 40px);
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    h1 span { color: var(--gold); }
+
+    .tagline {
+      margin-top: 8px;
+      font-size: 14px;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+    }
+
+    label {
+      display: block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 240px;
+      background: #0e0e0e;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 16px;
+      resize: vertical;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08);
+    }
+    textarea::placeholder { color: #444; }
+
+    /* ── Button ── */
+    .btn-wrap {
+      margin-top: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    button {
+      flex: 1;
+      background: var(--gold);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 16px 24px;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    button:hover:not(:disabled) {
+      background: #ffd740;
+      box-shadow: 0 0 24px rgba(245, 197, 24, 0.35);
+    }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    button:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    /* Loading shimmer on button */
+    button.loading::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer {
+      to { left: 100%; }
+    }
+
+    /* ── Status ── */
+    .status-wrap {
+      margin-top: 24px;
+      min-height: 48px;
+    }
+
+    .status-idle { display: none; }
+
+    .status-loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid #333;
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-text {
+      font-size: 14px;
+      color: #aaa;
+    }
+
+    .status-success {
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .status-success .label { font-size: 12px; color: var(--success); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+    .status-success .info  { font-size: 13px; color: #888; }
+
+    .status-error {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+      color: #f87171;
+    }
+
+    /* ── Meta tags (category/mood/voice) ── */
+    .meta-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .meta-tag {
+      background: #1e1e1e;
+      border: 1px solid #2e2e2e;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #888;
+    }
+    .meta-tag span { color: var(--gold); font-weight: 600; }
+
+    /* ── Download button ── */
+    .download-btn {
+      display: none;
+      margin-top: 16px;
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      border-radius: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 13px;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .download-btn:hover {
+      background: rgba(245, 197, 24, 0.08);
+      box-shadow: 0 0 16px rgba(245, 197, 24, 0.15);
+    }
+
+    /* ── Video player ── */
+    .video-wrap {
+      display: none;
+      margin-top: 24px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #000;
+      text-align: center;
+    }
+    video {
+      width: 100%;
+      max-height: 500px;
+      display: block;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 48px;
+      font-size: 12px;
+      color: #333;
+      text-align: center;
+    }
+  </style>
 </head>
-<body style="background:#111;color:white;font-family:Arial;padding:30px">
-  <h1>Script Video Maker</h1>
+<body>
 
-  <textarea id="script" style="width:95%;height:300px;font-size:18px" placeholder="Hindi/Hinglish script yaha paste karo"></textarea>
-  <br><br>
+  <header>
+    <div class="logo-strip">
+      <div class="strip-cell"></div><div class="strip-cell"></div>
+      <div class="strip-cell"></div><div class="strip-cell"></div>
+      <div class="strip-cell"></div><div class="strip-cell"></div>
+      <div class="strip-cell"></div><div class="strip-cell"></div>
+    </div>
+    <h1>Script <span>Video</span> Maker</h1>
+    <p class="tagline">Hindi script → Cinematic Reels &amp; Shorts, automatically</p>
+  </header>
 
-  <button onclick="generateVideo()" style="font-size:20px;padding:12px 25px">Generate MP4</button>
+  <div class="card">
+    <label>Apni Script Yahan Likho</label>
+    <textarea id="script" placeholder="Ek purani haveli mein ek raaz chhupta tha..."></textarea>
 
-  <p id="status"></p>
+    <div class="btn-wrap">
+      <button id="generateBtn" onclick="generateVideo()">🎬 Video Banao</button>
+    </div>
 
-  <a id="download" href="#" download="video.mp4" style="display:none;color:white;background:#2563eb;padding:12px 20px;text-decoration:none;margin-bottom:20px;border-radius:6px">
-    Download MP4
-  </a>
+    <div class="status-wrap">
+      <div id="statusBox" class="status-idle"></div>
+    </div>
 
-  <br>
+    <a id="download" class="download-btn" href="#" download="video.mp4">⬇ MP4 Download Karo</a>
 
-  <video id="video" controls style="display:none;width:360px;margin-top:20px"></video>
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" controls></video>
+    </div>
+  </div>
+
+  <footer>Free &bull; No API key needed &bull; Powered by Edge TTS + FFmpeg + Pollinations</footer>
 
   <script src="app.js"></script>
+  <script>
+    // Override generateVideo to update new UI
+    const _origGenerate = generateVideo;
+    window.generateVideo = async function() {
+      const script  = document.getElementById("script").value.trim();
+      const btn     = document.getElementById("generateBtn");
+      const box     = document.getElementById("statusBox");
+      const dlBtn   = document.getElementById("download");
+      const vidWrap = document.getElementById("videoWrap");
+      const video   = document.getElementById("video");
+
+      if (!script) {
+        box.className = "status-error";
+        box.textContent = "⚠ Pehle script paste karo!";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.classList.add("loading");
+      btn.textContent = "Ban raha hai...";
+      dlBtn.style.display = "none";
+      vidWrap.style.display = "none";
+      box.className = "status-loading";
+      box.innerHTML = `<div class="spinner"></div><div class="status-text">Video generate ho raha hai — images + audio + clips...</div>`;
+
+      try {
+        const res  = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script })
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+          box.className = "status-error";
+          box.textContent = "Error: " + data.error;
+        } else {
+          box.className = "status-success";
+          box.innerHTML = `
+            <div class="label">✓ Video Ready</div>
+            <div class="info">Job: ${data.jobId} &bull; ${data.scenes} scenes &bull; BG Music: ${data.bgMusic || '—'}</div>
+            <div class="meta-tags">
+              <div class="meta-tag">Category <span>${data.category}</span></div>
+              <div class="meta-tag">Mood <span>${data.mood || '—'}</span></div>
+              <div class="meta-tag">Voice <span>${(data.voice||'').replace('hi-IN-','').replace('Neural','')}</span></div>
+            </div>`;
+
+          const videoUrl = data.videoUrl + "?t=" + Date.now();
+          video.src = videoUrl;
+          vidWrap.style.display = "block";
+
+          dlBtn.href = data.downloadUrl + "?download=" + Date.now();
+          dlBtn.style.display = "block";
+        }
+      } catch(e) {
+        box.className = "status-error";
+        box.textContent = "Network error: " + e.message;
+      }
+
+      btn.disabled = false;
+      btn.classList.remove("loading");
+      btn.textContent = "🎬 Video Banao";
+    };
+  </script>
 </body>
 </html>
